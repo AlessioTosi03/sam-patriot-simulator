@@ -1,0 +1,9 @@
+patriot_sim/
+├── main.py              # Orchestrates simulation loops & run options
+├── environment.py       # Physics constants, time step (dt), 3D space
+├── target.py            # Incoming threat dynamics + DTMC maneuver generator
+├── interceptor.py      # Patriot flight dynamics (LTI state space representation)
+├── observer.py          # Luenberger Observer / Kalman Filter for target tracking
+├── guidance.py          # ProNav & LTI State Feedback controllers
+├── vv_engine.py         # V&V suite: Reachability, Lyapunov, Monte Carlo runs
+└── visualization.py    # 3D Matplotlib animation & V&V performance plots
