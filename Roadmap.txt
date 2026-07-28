@@ -1,0 +1,4 @@
+[ PHASE 1: Exam MVP ] ────> [ PHASE 2: Advanced V&V ] ────> [ PHASE 3: Thesis Scale ]
+   • Basic 3D Dynamics         • Full EKF vs Observer           • 3D Real-time GUI (PyQt/OpenGL)
+   • Linear ProNav / Feedback  • Markov Maneuver Heatmaps       • Multi-Target / Swarm Defense
+   • Stability & Reachability  • Actuator Saturation            • Non-linear Aerodynamics
