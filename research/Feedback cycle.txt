@@ -1,0 +1,13 @@
+Posizione bersaglio stimata
+        ↓
+    Calcola LOS angle
+        ↓
+    Errore = variazione LOS
+        ↓
+    Comando accelerazione (u)
+        ↓
+    Attuatori (ugelli, alette)
+        ↓
+    Nuova posizione missile
+        ↓
+    (ricomincia)
