@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 
-def animate_trajectory(trajectory, interval=30, title='Patriot Engine: Proximity Scaling & Dynamic Glow'):
+def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='Patriot Engine: Proximity Scaling & Dynamic Glow'):
     steps = int(trajectory.shape[0])
 
     fig = plt.figure(figsize=(8, 8), facecolor='#111111')
@@ -95,6 +95,12 @@ def animate_trajectory(trajectory, interval=30, title='Patriot Engine: Proximity
 
     trail_line, = ax.plot([], [], [], ':', color='cyan', linewidth=1.0, alpha=0.3, label='Flight Path')
     missile_head, = ax.plot([], [], [], 'o', color='red', markersize=4, alpha=0.3, label='Missile (State x)')
+    # target artist (if provided)
+    target_head = None
+    target_trail = None
+    if target_trajectory is not None:
+        target_trail, = ax.plot([], [], [], ':', color='yellow', linewidth=1.0, alpha=0.6, label='Target Path')
+        target_head, = ax.plot([], [], [], 'X', color='yellow', markersize=8, alpha=0.9, label='Target')
 
     ax.legend(loc='upper right', facecolor='#222222', edgecolor='white', fontsize=9)
 
@@ -121,6 +127,14 @@ def animate_trajectory(trajectory, interval=30, title='Patriot Engine: Proximity
         missile_head.set_markersize(marker_size)
         missile_head.set_color(missile_color)
 
+        # if target trajectory provided, update its artists
+        if target_trajectory is not None and target_head is not None:
+            target_head.set_data([target_trajectory[frame, 0]], [target_trajectory[frame, 1]])
+            target_head.set_3d_properties([target_trajectory[frame, 2]])
+        if target_trajectory is not None and target_trail is not None:
+            target_trail.set_data(target_trajectory[:frame+1, 0], target_trajectory[:frame+1, 1])
+            target_trail.set_3d_properties(target_trajectory[:frame+1, 2])
+
         pos = trajectory[frame, :3]
         vel = trajectory[frame, 3:]
         speed = np.linalg.norm(vel)
@@ -130,6 +144,10 @@ def animate_trajectory(trajectory, interval=30, title='Patriot Engine: Proximity
             f"Speed: {speed:.1f} m/s\n"
         )
 
+        if target_head is not None and target_trail is not None:
+            return trail_line, missile_head, target_trail, target_head, stats_text
+        if target_head is not None:
+            return trail_line, missile_head, target_head, stats_text
         return trail_line, missile_head, stats_text
 
     ani = FuncAnimation(fig, animate, frames=steps, interval=interval, blit=False)
