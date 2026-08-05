@@ -1,10 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.widgets import Button
+
+from environment import default_initial_state, default_params, generate_target_trajectory, generate_trajectory
 
 
 def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='Patriot Engine: Proximity Scaling & Dynamic Glow'):
-    steps = int(trajectory.shape[0])
+    current_trajectory = trajectory
+    current_target_trajectory = target_trajectory
+    steps = int(current_trajectory.shape[0])
+    frame_state = {"frame": 0}
 
     fig = plt.figure(figsize=(8, 8), facecolor='#111111')
     ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
@@ -72,12 +78,18 @@ def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='P
     fig.canvas.mpl_connect('button_release_event', _on_release)
     fig.canvas.mpl_connect('motion_notify_event', _on_motion)
 
-    max_range = np.max(trajectory[:, :3]) * 1.05
+    max_range = np.max(current_trajectory[:, :3]) * 1.05
+    if current_target_trajectory is not None:
+        max_range = max(max_range, np.max(current_target_trajectory[:, :3]) * 1.05)
+        min_z = np.min(current_target_trajectory[:, 2]) * 1.05
+    else:
+        min_z = 0.0
+
     if max_range == 0:
         max_range = 1.0
     ax.set_xlim([0, max_range])
     ax.set_ylim([0, max_range])
-    ax.set_zlim([0, max_range])
+    ax.set_zlim([min_z if min_z < 0 else 0, max_range])
     ax.set_box_aspect([1, 1, 1])
 
     ax.xaxis.pane.fill = False
@@ -106,9 +118,27 @@ def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='P
 
     stats_text = ax.text2D(0.02, 0.98, "", transform=ax.transAxes, fontsize=9, color='white',
                            va='top', bbox=dict(boxstyle="round,pad=0.5", facecolor="#222222", edgecolor="cyan", alpha=0.9))
+    target_stats_text = ax.text2D(0.02, 0.82, "", transform=ax.transAxes, fontsize=9, color='white',
+                                  va='top', bbox=dict(boxstyle="round,pad=0.5", facecolor="#222222", edgecolor="yellow", alpha=0.9))
+
+    restart_ax = fig.add_axes([0.82, 0.02, 0.14, 0.05])
+    restart_button = Button(restart_ax, 'Restart', color='#222222', hovercolor='#333333')
+    restart_button.label.set_color('white')
+
+    def _restart_simulation(_event):
+        dt, new_steps, _ = default_params()
+        nonlocal current_trajectory, current_target_trajectory, steps
+        current_trajectory = generate_trajectory(x0=default_initial_state(), steps=new_steps)
+        current_target_trajectory = generate_target_trajectory(steps=new_steps)
+        steps = int(current_trajectory.shape[0])
+        frame_state["frame"] = 0
+        ani.frame_seq = ani.new_frame_seq()
+        fig.canvas.draw_idle()
+
+    restart_button.on_clicked(_restart_simulation)
 
     def animate(frame):
-        progress = frame / max(1, steps - 1)
+        frame_state["frame"] = frame
 
         marker_size = 8.0
         line_width = 1.5
@@ -117,26 +147,26 @@ def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='P
         missile_color = (1.0, 0.1, 0.0, alpha_val)
         trail_color = (0.0, 0.8, 1.0, alpha_val)
 
-        trail_line.set_data(trajectory[:frame+1, 0], trajectory[:frame+1, 1])
-        trail_line.set_3d_properties(trajectory[:frame+1, 2])
+        trail_line.set_data(current_trajectory[:frame+1, 0], current_trajectory[:frame+1, 1])
+        trail_line.set_3d_properties(current_trajectory[:frame+1, 2])
         trail_line.set_linewidth(line_width)
         trail_line.set_color(trail_color)
 
-        missile_head.set_data([trajectory[frame, 0]], [trajectory[frame, 1]])
-        missile_head.set_3d_properties([trajectory[frame, 2]])
+        missile_head.set_data([current_trajectory[frame, 0]], [current_trajectory[frame, 1]])
+        missile_head.set_3d_properties([current_trajectory[frame, 2]])
         missile_head.set_markersize(marker_size)
         missile_head.set_color(missile_color)
 
         # if target trajectory provided, update its artists
-        if target_trajectory is not None and target_head is not None:
-            target_head.set_data([target_trajectory[frame, 0]], [target_trajectory[frame, 1]])
-            target_head.set_3d_properties([target_trajectory[frame, 2]])
-        if target_trajectory is not None and target_trail is not None:
-            target_trail.set_data(target_trajectory[:frame+1, 0], target_trajectory[:frame+1, 1])
-            target_trail.set_3d_properties(target_trajectory[:frame+1, 2])
+        if current_target_trajectory is not None and target_head is not None:
+            target_head.set_data([current_target_trajectory[frame, 0]], [current_target_trajectory[frame, 1]])
+            target_head.set_3d_properties([current_target_trajectory[frame, 2]])
+        if current_target_trajectory is not None and target_trail is not None:
+            target_trail.set_data(current_target_trajectory[:frame+1, 0], current_target_trajectory[:frame+1, 1])
+            target_trail.set_3d_properties(current_target_trajectory[:frame+1, 2])
 
-        pos = trajectory[frame, :3]
-        vel = trajectory[frame, 3:]
+        pos = current_trajectory[frame, :3]
+        vel = current_trajectory[frame, 3:]
         speed = np.linalg.norm(vel)
         stats_text.set_text(
             f"Step k = {frame}/{steps}\n"
@@ -144,11 +174,25 @@ def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='P
             f"Speed: {speed:.1f} m/s\n"
         )
 
-        if target_head is not None and target_trail is not None:
-            return trail_line, missile_head, target_trail, target_head, stats_text
-        if target_head is not None:
-            return trail_line, missile_head, target_head, stats_text
-        return trail_line, missile_head, stats_text
+        if current_target_trajectory is not None:
+            target_pos = current_target_trajectory[frame, :3]
+            target_vel = current_target_trajectory[frame, 3:]
+            target_speed = np.linalg.norm(target_vel)
+            target_range = np.linalg.norm(target_pos)
+            target_stats_text.set_text(
+                f"Target telemetry\n"
+                f"Pos (m): [{target_pos[0]:.0f}, {target_pos[1]:.0f}, {target_pos[2]:.0f}]\n"
+                f"Speed: {target_speed:.1f} m/s\n"
+                f"Range: {target_range:.0f} m\n"
+            )
+        else:
+            target_stats_text.set_text("")
+
+        if current_target_trajectory is not None and target_head is not None and target_trail is not None:
+            return trail_line, missile_head, target_trail, target_head, stats_text, target_stats_text
+        if current_target_trajectory is not None and target_head is not None:
+            return trail_line, missile_head, target_head, stats_text, target_stats_text
+        return trail_line, missile_head, stats_text, target_stats_text
 
     ani = FuncAnimation(fig, animate, frames=steps, interval=interval, blit=False)
     plt.show()
