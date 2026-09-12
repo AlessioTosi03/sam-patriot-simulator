@@ -1,5 +1,5 @@
 import numpy as np
-from environment import simulate_interception, default_params, generate_random_target
+from environment import simulate_interception, generate_random_target
 from visualization import animate_trajectory
 
 
