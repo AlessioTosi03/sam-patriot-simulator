@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import Button
 
-from environment import default_initial_state, default_params, generate_target_trajectory, generate_trajectory
+from environment import simulate_interception
 
 
 def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='Patriot Engine: Proximity Scaling & Dynamic Glow'):
@@ -78,19 +78,25 @@ def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='P
     fig.canvas.mpl_connect('button_release_event', _on_release)
     fig.canvas.mpl_connect('motion_notify_event', _on_motion)
 
-    max_range = np.max(current_trajectory[:, :3]) * 1.05
-    if current_target_trajectory is not None:
-        max_range = max(max_range, np.max(current_target_trajectory[:, :3]) * 1.05)
-        min_z = np.min(current_target_trajectory[:, 2]) * 1.05
-    else:
-        min_z = 0.0
+    def _update_bounds(m_traj, t_traj):
+        all_pts = m_traj[:, :3]
+        if t_traj is not None:
+            all_pts = np.vstack([all_pts, t_traj[:, :3]])
 
-    if max_range == 0:
-        max_range = 1.0
-    ax.set_xlim([0, max_range])
-    ax.set_ylim([0, max_range])
-    ax.set_zlim([min_z if min_z < 0 else 0, max_range])
-    ax.set_box_aspect([1, 1, 1])
+        min_x, max_x = np.min(all_pts[:, 0]), np.max(all_pts[:, 0])
+        min_y, max_y = np.min(all_pts[:, 1]), np.max(all_pts[:, 1])
+        min_z, max_z = np.min(all_pts[:, 2]), np.max(all_pts[:, 2])
+
+        pad_x = (max_x - min_x) * 0.08 if max_x != min_x else 1000.0
+        pad_y = (max_y - min_y) * 0.08 if max_y != min_y else 1000.0
+        pad_z = (max_z - min_z) * 0.08 if max_z != min_z else 1000.0
+
+        ax.set_xlim([min_x - pad_x, max_x + pad_x])
+        ax.set_ylim([min_y - pad_y, max_y + pad_y])
+        ax.set_zlim([0, max_z + pad_z])
+        ax.set_box_aspect([1, 1, 1])
+
+    _update_bounds(current_trajectory, current_target_trajectory)
 
     ax.xaxis.pane.fill = False
     ax.yaxis.pane.fill = False
@@ -126,11 +132,13 @@ def animate_trajectory(trajectory, target_trajectory=None, interval=30, title='P
     restart_button.label.set_color('white')
 
     def _restart_simulation(_event):
-        dt, new_steps, _ = default_params()
         nonlocal current_trajectory, current_target_trajectory, steps
-        current_trajectory = generate_trajectory(x0=default_initial_state(), steps=new_steps)
-        current_target_trajectory = generate_target_trajectory(steps=new_steps)
+        m_traj, t_traj, _, intercepted, min_miss = simulate_interception()
+        current_trajectory = m_traj
+        current_target_trajectory = t_traj
         steps = int(current_trajectory.shape[0])
+        _update_bounds(current_trajectory, current_target_trajectory)
+        ax.set_title(f"Patriot SAM: ProNav Interception (Miss Distance: {min_miss:.1f} m)", color='white', fontsize=12)
         frame_state["frame"] = 0
         ani.frame_seq = ani.new_frame_seq()
         fig.canvas.draw_idle()

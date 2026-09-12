@@ -100,3 +100,113 @@ def generate_target_trajectory(x0=None, steps=None, dt=None, A=None):
         trajectory[impact_index, 2] = 0.0
 
     return trajectory
+
+
+def get_lti_matrices(dt: float):
+    """
+    Returns discrete-time LTI state transition matrix A (6x6)
+    and control input matrix B (6x3) for 3D state vector [x, y, z, vx, vy, vz]^T
+    and acceleration control input u = [ax, ay, az]^T:
+    
+        x(k+1) = A * x(k) + B * u(k)
+    """
+    A = np.eye(6)
+    A[0, 3] = dt
+    A[1, 4] = dt
+    A[2, 5] = dt
+
+    B = np.zeros((6, 3))
+    B[0, 0] = 0.5 * (dt ** 2)
+    B[1, 1] = 0.5 * (dt ** 2)
+    B[2, 2] = 0.5 * (dt ** 2)
+    B[3, 0] = dt
+    B[4, 1] = dt
+    B[5, 2] = dt
+
+    return A, B
+
+
+def simulate_interception(
+    missile_x0=None,
+    target_x0=None,
+    steps=1000,
+    dt=0.05,
+    N=3.5,
+    max_accel=300.0,
+    kill_radius=15.0
+):
+    """
+    Simulates closed-loop interception between Patriot missile and target
+    using discrete-time LTI state-space dynamics and ProNav guidance.
+    
+    Returns:
+        missile_traj: np.ndarray of shape (k_final, 6)
+        target_traj:  np.ndarray of shape (k_final, 6)
+        los_history:  list of LOSState for each step
+        intercepted:  bool (True if miss distance <= kill_radius)
+        min_miss_distance: float (minimum distance reached in meters)
+    """
+    from guidance import compute_pronav_acceleration
+
+    if missile_x0 is None:
+        # Default missile initial launch state (aiming upwards towards target)
+        missile_x0 = np.array([0.0, 0.0, 0.0, 400.0, 400.0, 800.0])
+
+    if target_x0 is None:
+        target_x0 = generate_random_target(min_range=12000.0, max_range=18000.0, max_altitude=15000.0)
+
+    A, B = get_lti_matrices(dt)
+
+    missile_state = missile_x0.copy()
+    target_state = target_x0.copy()
+
+    missile_traj = []
+    target_traj = []
+    los_history = []
+
+    min_miss_distance = float('inf')
+    intercepted = False
+
+    for k in range(steps):
+        missile_traj.append(missile_state.copy())
+        target_traj.append(target_state.copy())
+
+        # 1. Compute ProNav control acceleration input u(k) = a_M(k) based on LOS kinematics
+        u_k, los_k = compute_pronav_acceleration(
+            target_state=target_state,
+            missile_state=missile_state,
+            N=N,
+            max_accel=max_accel,
+            include_gravity=True
+        )
+        los_history.append(los_k)
+
+        current_range = los_k.range
+        if current_range < min_miss_distance:
+            min_miss_distance = current_range
+
+        # Check interception condition
+        if current_range <= kill_radius:
+            intercepted = True
+            break
+
+        # Check target ground impact
+        if target_state[2] <= 0.0:
+            break
+
+        # 2. Propagate Target State (Linear trajectory / gravity model)
+        # Target experiences gravity g = [0, 0, -9.81]
+        u_target = np.array([0.0, 0.0, -9.81])
+        target_state = A @ target_state + B @ u_target
+
+        # 3. Propagate Missile State using LTI update x_M(k+1) = A * x_M(k) + B * u(k)
+        missile_state = A @ missile_state + B @ u_k
+
+    return (
+        np.array(missile_traj),
+        np.array(target_traj),
+        los_history,
+        intercepted,
+        min_miss_distance
+    )
+
