@@ -7,25 +7,19 @@ def generate_random_target(max_range=60000.0, min_range=20000.0, max_altitude=25
     for an endoatmospheric threat targeting the origin (0, 0, 0).
     """
 
-    # 2. Randomize position (polar -> Cartesian)
+    # Position and velocity in spherical/polar coordinates
     r_xy = np.random.uniform(min_range, max_range)
     azimuth = np.random.uniform(0, 2 * np.pi)
-
     x = r_xy * np.cos(azimuth)
     y = r_xy * np.sin(azimuth)
-
-    # Ballistic missiles spawn high in the atmosphere (15 km to 25 km ceiling)
     z = np.random.uniform(15000.0, max_altitude)
-    # Fast speeds (Mach 3 to Mach 5)
-    speed = np.random.normal(1200.0, 200.0)
-    # Steep dive angle (-45 to -75 degrees)
-    gamma = np.random.uniform(-75.0, -45.0) * (np.pi / 180.0)
 
-    # 3. Target heading (point roughly at the origin/interceptor)
+    # Ballistic trajectory pointing towards origin
+    speed = np.random.normal(1200.0, 200.0)
+    gamma = np.random.uniform(-75.0, -45.0) * (np.pi / 180.0)
     angle_to_origin = np.arctan2(-y, -x)
     heading = angle_to_origin + np.random.normal(0, 0.05)
 
-    # 4. Calculate velocity components
     v_x = speed * np.cos(gamma) * np.cos(heading)
     v_y = speed * np.cos(gamma) * np.sin(heading)
     v_z = speed * np.sin(gamma)
@@ -79,12 +73,15 @@ def simulate_interception(
     """
     from guidance import compute_pronav_acceleration
 
-    if missile_x0 is None:
-        # Default missile initial launch state (aiming upwards towards target)
-        missile_x0 = np.array([0.0, 0.0, 0.0, 400.0, 400.0, 800.0])
-
     if target_x0 is None:
         target_x0 = generate_random_target(min_range=12000.0, max_range=18000.0, max_altitude=15000.0)
+
+    if missile_x0 is None:
+        # Orient launcher towards detected target azimuth
+        r_xy = float(np.hypot(target_x0[0], target_x0[1]))
+        dir_x = target_x0[0] / r_xy if r_xy > 1e-3 else 0.707
+        dir_y = target_x0[1] / r_xy if r_xy > 1e-3 else 0.707
+        missile_x0 = np.array([0.0, 0.0, 0.0, 500.0 * dir_x, 500.0 * dir_y, 700.0])
 
     A, B = get_lti_matrices(dt)
 
@@ -102,7 +99,7 @@ def simulate_interception(
         missile_traj.append(missile_state.copy())
         target_traj.append(target_state.copy())
 
-        # 1. Compute ProNav control acceleration input u(k) = a_M(k) based on LOS kinematics
+        # Guidance command via ProNav
         u_k, los_k = compute_pronav_acceleration(
             target_state=target_state,
             missile_state=missile_state,
@@ -116,21 +113,16 @@ def simulate_interception(
         if current_range < min_miss_distance:
             min_miss_distance = current_range
 
-        # Check interception condition
         if current_range <= kill_radius:
             intercepted = True
             break
 
-        # Check target ground impact
         if target_state[2] <= 0.0:
             break
 
-        # 2. Propagate Target State (Linear trajectory / gravity model)
-        # Target experiences gravity g = [0, 0, -9.81]
+        # State propagation under LTI discrete dynamics
         u_target = np.array([0.0, 0.0, -9.81])
         target_state = A @ target_state + B @ u_target
-
-        # 3. Propagate Missile State using LTI update x_M(k+1) = A * x_M(k) + B * u(k)
         missile_state = A @ missile_state + B @ u_k
 
     return (
